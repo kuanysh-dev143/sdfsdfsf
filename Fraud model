@@ -1,1 +1,110 @@
+# AI Fraud Detection System (MVP)
 
+Real-time transaction risk scoring demo. FastAPI + scikit-learn backend,
+vanilla JS + Chart.js frontend. **Demo/sandbox only — synthetic data.**
+
+## What it does
+
+- Add a transaction (amount, time, location, device, history) and get back:
+  - a **Fraud Risk Score** (0–100)
+  - a **risk level**: `LOW` / `MEDIUM` / `HIGH` / `CRITICAL`
+  - a **fraud probability**
+  - plain-language **reasons** the transaction was flagged
+- Dashboard with live stats, risk-distribution and risk-trend charts, and a
+  recent-transactions table
+- `/network`-style view (a tab in the SPA) showing masked
+  User → Card → Device → IP → Merchant relationships as an SVG graph
+- **Live Simulation**: streams new synthetic transactions every few seconds
+  over a WebSocket and scores them in real time
+
+## How the AI works
+
+1. `fraud_model.py` generates a synthetic training set of "normal" and
+   "suspicious" transaction patterns (amount ratio vs. a user's average,
+   deviation from typical hours, new device/location, transaction velocity,
+   distance jumps, account history).
+2. A **RandomForestClassifier** is trained for supervised fraud probability.
+3. An **IsolationForest** is trained on normal transactions to catch novel
+   anomalies the classifier hasn't seen.
+4. Both models are combined into a single 0–100 risk score, and a
+   rule-based explainability layer turns the feature values into
+   human-readable reasons.
+5. Models are cached to `backend/models/*.joblib` after first training.
+
+## Security notes
+
+- **No real payment data is ever stored.** Only a masked `card_token`
+  (e.g. `CARD-4821`) is kept — never a full card number, CVV, or PIN.
+- All API inputs are validated with Pydantic (types, ranges, string length).
+- All database access uses parameterized SQLite queries (no string-built SQL).
+- `.env.example` documents configuration; no real secrets are needed for
+  this demo.
+
+## Project structure
+
+```
+fraud-detection/
+├── backend/
+│   ├── main.py            # FastAPI app, REST + WebSocket endpoints
+│   ├── fraud_model.py      # ML pipeline (RandomForest + IsolationForest)
+│   ├── database.py         # SQLite schema + queries
+│   ├── requirements.txt
+│   └── .env.example
+├── frontend/
+│   ├── index.html
+│   ├── style.css
+│   └── script.js
+└── README.md
+```
+
+## Run it
+
+### 1. Backend
+
+```bash
+cd fraud-detection/backend
+python -m venv venv
+source venv/bin/activate        # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+uvicorn main:app --reload
+```
+
+The first request will train and cache the ML models (a few seconds), then
+seed a handful of demo transactions so the dashboard isn't empty. The API
+runs at `http://localhost:8000` — check `http://localhost:8000/api/health`.
+
+### 2. Frontend
+
+The frontend is static — no build step. Simplest options:
+
+```bash
+cd fraud-detection/frontend
+python -m http.server 5500
+```
+
+Then open `http://localhost:5500` in your browser.
+
+(Alternatively, use the VS Code "Live Server" extension, or any static file
+server — just make sure the backend is running at `http://localhost:8000`,
+or edit `API_BASE` at the top of `script.js` if you're hosting the API
+elsewhere.)
+
+### 3. Try it
+
+- Click **"+ Analyze Transaction"**, fill in a transaction, and see the
+  risk score and explanation.
+- Try an obviously suspicious one: large amount, 3 AM, new device,
+  far-away location, several transactions in the last 10 minutes — it
+  should score `HIGH` or `CRITICAL`.
+- Open the **Live Simulation** tab and click **Start** to watch synthetic
+  transactions stream in and get scored automatically.
+- Check the **Network** tab to see masked User → Card → Device → IP →
+  Merchant relationships.
+
+## Notes / known simplifications (it's an MVP)
+
+- CORS is wide open (`allow_origins=["*"]`) for local demo convenience —
+  restrict this before deploying anywhere real.
+- SQLite is used for simplicity; swap for Postgres for anything beyond a demo.
+- The "network" graph uses a lightweight custom SVG layout rather than a
+  full graph library, since the whole frontend is dependency-free vanilla JS.
