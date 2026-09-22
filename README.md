@@ -1,0 +1,2 @@
+# sdfsdfsf
+Tranzakcia
